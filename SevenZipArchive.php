@@ -10,7 +10,7 @@
 * @author    Craig Manley
 * @copyright Copyright © 2014, Craig Manley (www.craigmanley.com)
 * @license   http://www.opensource.org/licenses/mit-license.php Licensed under MIT
-* @version   $Id: SevenZipArchive.php,v 1.1 2014/06/06 23:18:04 cmanley Exp $
+* @version   $Id: SevenZipArchive.php,v 1.2 2014/06/07 22:22:40 cmanley Exp $
 * @package   cmanley
 */
 
@@ -26,8 +26,8 @@ class SevenZipArchiveException extends Exception {}
 
 
 /**
-* 7zip archive class.
-* Front end to 7zr executable.
+* 7-Zip archive class.
+* Front end to 7za or 7zr executable.
 * Currently only lists and extracts from existing archives.
 *
 * Example(s):
@@ -53,18 +53,25 @@ class SevenZipArchiveException extends Exception {}
 *	$archive->extractTo('.');
 * </pre>
 *
+* Which binary:
+*	For Windows there are 2 possible binaries to download from http://www.7-zip.org/download.html
+*		If you install the CLI version, then the binary is called 7za.
+*		If you install the GUI version, then the binary is called 7z and it is installed in the path "c:\Program Files\7-Zip" by default.
+*	For other OS's, the minimal CLI version is called 7zr, and the full version is called 7za.
+*
 * @package  cmanley
 */
 class SevenZipArchive implements Iterator {
 
-	protected $file = null;
+	protected $file = null; // archive file
 	protected $key = -1; // iterator key
 	protected $entries = null; // Array of associative arrays
-	protected $meta = null; // Associative array of meta data form last list command.
+	protected $meta = null; // Associative array of meta data from last list command.
 
 	// Options:
 	protected $debug = false;
 	protected $internal_encoding = null;
+	protected $binary = null;
 
 	/**
 	* Constructor.
@@ -72,6 +79,7 @@ class SevenZipArchive implements Iterator {
 	* @param string $file - The file name of the ZIP archive to open.
 	* @param array $option optional associative array of any of these options:
 	*	- debug: boolean, if true, then debug messages are emitted using error_log()
+	*	- binary: default is "7za" for Windows, else "7zr"
 	*	- internal_encoding: default is mb_internal_encoding()
 	* @throws SevenZipArchiveException
 	* @throws \InvalidArgumentException
@@ -100,7 +108,7 @@ class SevenZipArchive implements Iterator {
 					}
 					$this->$key = $value;
 				}
-				elseif (in_array($key, array('internal_encoding'))) {
+				elseif (in_array($key, array('binary', 'internal_encoding'))) {
 					if (!(is_string($value) && strlen($value))) {
 						throw new \InvalidArgumentException("The '$key' option must be a non-empty string");
 					}
@@ -114,8 +122,16 @@ class SevenZipArchive implements Iterator {
 		if (!$this->internal_encoding) {
 			$this->internal_encoding = mb_internal_encoding();
 		}
-		// TODO -scs UTF-8 | WIN | DOS
+		if (is_null($this->binary)) {
+			if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+				$this->binary = '7za';
+			}
+			else {
+				$this->binary = '7zr'; // minimal version of 7za
+			}
+		}
 		$this->debug && error_log(__METHOD__ . ' Archive file: ' . $this->file);
+		$this->debug && error_log(__METHOD__ . ' Binary: ' . $this->binary);
 		$this->debug && error_log(__METHOD__ . ' Internal encoding: ' . $this->internal_encoding);
 
 		// Load entries.
@@ -130,11 +146,9 @@ class SevenZipArchive implements Iterator {
 	* @return array
 	*/
 	protected function _list() {
-		// TODO: make path and executable configurable
-		//$os = php_uname('s');
 		$rc = null;
 		$output = array();
-		$cmd = '7zr l';
+		$cmd = $this->binary . ' l';
 		/* TODO: this doesn't seem to work:
 		if (preg_match('/^UTF-/i', $this->internal_encoding)) {
 			$cmd .= ' -scsUTF-8';
@@ -153,12 +167,6 @@ class SevenZipArchive implements Iterator {
 		if ($rc) {
 			$this->debug && error_log(__METHOD__ . ' Command output: ' . join("\n", $output));
 		}
-		/*
-		if ($rc == 127) { // bad command (probably not in path)
-			$cmd = "/usr/bin/$cmd";
-		}
-		exec($cmd, $output, $rc);
-		*/
 		if ($rc) {
 			throw new Exception("\"$cmd\" call failed with return code: $rc");
 		}
@@ -287,7 +295,7 @@ class SevenZipArchive implements Iterator {
 		// TODO: make path and executable configurable
 		$rc = null;
 		$output = array();
-		$cmd = '7zr e -bd -y -o' . escapeshellarg($destination) . ' ' . escapeshellarg($this->file);
+		$cmd = $this->binary . ' e -bd -y -o' . escapeshellarg($destination) . ' ' . escapeshellarg($this->file);
 		if ($names) {
 			$cmd .= ' ' . join(' ', array_map(function($x) { return escapeshellarg($x); }, $names));
 		}
@@ -297,12 +305,6 @@ class SevenZipArchive implements Iterator {
 		if ($rc) {
 			$this->debug && error_log(__METHOD__ . ' Command output: ' . join("\n", $output));
 		}
-		/*
-		if ($rc == 127) { // bad command (probably not in path)
-			$cmd = "/usr/bin/$cmd";
-		}
-		exec($cmd, $output, $rc);
-		*/
 		if ($rc) {
 			//throw new Exception("\"$cmd\" call failed with return code: $rc");
 			trigger_error("\"$cmd\" call failed with return code: $rc", E_USER_ERROR);
