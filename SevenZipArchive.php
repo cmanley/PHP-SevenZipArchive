@@ -295,7 +295,7 @@ class SevenZipArchive implements Iterator {
 		// TODO: make path and executable configurable
 		$rc = null;
 		$output = array();
-		$cmd = $this->binary . ' e -bd -y -o' . escapeshellarg($destination) . ' ' . escapeshellarg($this->file);
+		$cmd = $this->binary . ' x -bd -y -o' . escapeshellarg($destination) . ' ' . escapeshellarg($this->file);
 		if ($names) {
 			$cmd .= ' ' . join(' ', array_map(function($x) { return escapeshellarg($x); }, $names));
 		}
