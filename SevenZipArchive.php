@@ -10,7 +10,7 @@
 * @author    Craig Manley
 * @copyright Copyright © 2014, Craig Manley (www.craigmanley.com)
 * @license   http://www.opensource.org/licenses/mit-license.php Licensed under MIT
-* @version   $Id: SevenZipArchive.php,v 1.2 2014/06/07 22:22:40 cmanley Exp $
+* @version   $Id: SevenZipArchive.php,v 1.4 2019/02/13 21:18:13 cmanley Exp $
 * @package   cmanley
 */
 
@@ -91,9 +91,9 @@ class SevenZipArchive implements Iterator {
 		if (!strlen($file)) {
 			throw new \InvalidArgumentException('Missing file argument');
 		}
-		if (!file_exists($file)) {
-			throw new \InvalidArgumentException("File '$file' not found"); // TODO: support create mode
-		}
+		//if (!file_exists($file)) {
+		//	throw new \InvalidArgumentException("File '$file' not found"); // TODO: support create mode
+		//}
 		$this->file = $file;
 		if (!is_array($options)) {
 			$options = array();
@@ -135,8 +135,8 @@ class SevenZipArchive implements Iterator {
 		$this->debug && error_log(__METHOD__ . ' Internal encoding: ' . $this->internal_encoding);
 
 		// Load entries.
-		$this->entries = $this->_list();
-		$this->rewind();
+		//$this->entries = $this->_list();
+		//$this->rewind();
 	}
 
 
@@ -146,6 +146,9 @@ class SevenZipArchive implements Iterator {
 	* @return array
 	*/
 	protected function _list() {
+		if (!file_exists($this->file)) {
+			return array();
+		}
 		$rc = null;
 		$output = array();
 		$cmd = $this->binary . ' l';
@@ -254,6 +257,99 @@ class SevenZipArchive implements Iterator {
 
 
 	/**
+	* Executes the given command with the given arguments.
+	*
+	* @param string $cmd pre-escaped command and arguments using escapeshellcmd() and escapeshellarg()
+	* @param string|null $stdin this is piped into the process
+	* @param string &$stdout receives the STDOUT.
+	* @param string &$stderr receives the STDERR.
+	* @return int exit code of command; 0 is success
+	*/
+	protected function _proc_exec($cmd, $stdin = null, &$stdout, &$stderr) {
+		$cmd = '(' . $cmd . ') 3>/dev/null; echo $? >&3'; // unreliable proc_close exitcode workaround
+		$this->debug && error_log(__METHOD__ . " $cmd");
+		$descriptors = array(
+			0 => array('pipe', 'r'),	// stdin is a pipe that the child will read from
+			1 => array('pipe', 'w'),	// stdout is a pipe that the child will write to
+			2 => array('pipe', 'w'),	// stderr is a pipe that the child will write to
+			3 => array('pipe', 'w'),	// unreliable proc_close exitcode workaround
+		);
+		$pipes = null;
+		$process = proc_open($cmd, $descriptors, $pipes);
+		if (!is_resource($process)) {
+			throw new Exception("Failed to open process '$cmd'.\n");
+		}
+		// $pipes now looks like this:
+		// 0 => writeable handle connected to child stdin
+		// 1 => readable handle connected to child stdout
+		// 2 => readable handle connected to child stderr
+		// 3 => readable handle connected to child exitcode
+		if ($stdin) {
+			fwrite($pipes[0], $stdin);
+		}
+		fclose($pipes[0]);
+
+		// It is important that you close any pipes before calling proc_close in order to avoid a deadlock.
+		$stdout = stream_get_contents($pipes[1]);
+		fclose($pipes[1]);
+		$stderr = stream_get_contents($pipes[2]);
+		fclose($pipes[2]);
+		$exitcode = stream_get_contents($pipes[3]);
+		fclose($pipes[3]);
+
+		$status = proc_get_status($process);
+		$rc = proc_close($process); // will return -1 if PHP was compiled with --enable-sigchild
+		$rc = $status && $status['running'] ? $rc : $status['exitcode'];
+		if (($rc == -1) && preg_match('/^(-?\d+)\s*$/', $exitcode, $matches)) { // unreliable proc_close exitcode workaround
+			$rc = (int) $matches[1];
+		}
+		return $rc;
+	}
+
+
+	/**
+	* Adds a file to the archive using it's contents. Similar to http://www.php.net/manual/en/ziparchive.addfromstring.php
+	*
+	* @param string $localname name to add/update in the archive; may contain path parts
+	* @param string $contents
+	* @return bool
+	*/
+	public function addFromString($localname, $contents) {
+		if (!is_string($localname)) {
+			throw new \InvalidArgumentException(gettype($localname) . ' is not a legal localname argument type');
+		}
+		if (!strlen($localname)) {
+			throw new \InvalidArgumentException('Missing localname argument');
+		}
+		if (!is_string($contents)) {
+			throw new \InvalidArgumentException(gettype($contents) . ' is not a legal contents argument type');
+		}
+
+		// TODO: support compression levels and method options
+		// TODO: support -scc{UTF-8|WIN|DOS} : set charset for console input/output but not all versions of 7zr support it (9.20 (on Debian 7 and 8) doesn't, 16.02 (on Debian 9) does)
+		// How it's done:
+		// cat .gitignore | 7zr a -si'The €U/sucks/file.txt' test.7z
+		$rc = null;
+		$output = array();
+		$cmd = escapeshellcmd($this->binary) . ' a -bd -y -si' . escapeshellarg($localname) . ' ' . escapeshellarg($this->file);
+		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
+		$stdout = '';
+		$stderr = '';
+		$rc = $this->_proc_exec($cmd, $contents, $stdout, $stderr);
+		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
+		$this->debug && error_log(__METHOD__ . " Command stdout: $stdout\n");
+		$this->debug && error_log(__METHOD__ . " Command stderr: $stderr\n");
+		if ($rc) {
+			trigger_error("\"$cmd\" call failed with return code: $rc", E_USER_ERROR);
+			return false;
+		}
+		$this->entries = null; $this->key = -1;
+		$stdout && preg_match('/(^|\n)Everything is Ok\s*$/', $stdout); // perhaps unnecessary if rc is reliable
+		return true;
+	}
+
+
+	/**
 	* Extract the complete archive or the given files to the specified destination.
 	*
 	* @param string $destination
@@ -318,20 +414,30 @@ class SevenZipArchive implements Iterator {
 	/**
 	* Returns an associative array of archive meta data.
 	*
-	* @return array
+	* @return array|null
 	*/
 	public function metadata() {
+		if (is_null($this->meta)) {
+			if (file_exists($this->file)) {
+				$this->_list();	// Sets $this->meta
+			}
+		}
 		return $this->meta;
 	}
 
 
 	/**
-	* Returns the entries as an array.
+	* Returns the entries as an array
 	*
 	* @return array
 	*/
 	public function entries() {
-		return $this->entries;
+		if (is_null($this->entries)) {
+			if (file_exists($this->file)) {
+				$this->entries = $this->_list();
+			}
+		}
+		return is_null($this->entries) ? array() : $this->entries;
 	}
 
 
@@ -352,7 +458,18 @@ class SevenZipArchive implements Iterator {
 	* @return int
 	*/
 	public function get($index) {
-		return @$this->entries[$index];
+		return isset($this->entries[$index]) ? $this->entries[$index] : null;
+	}
+
+
+	/**
+	* Sets debug mode on/off.
+	*
+	* @param boolean $value
+	* @return void
+	*/
+	public function setDebug($value) {
+		$this->debug = !!$value;
 	}
 
 
@@ -360,7 +477,7 @@ class SevenZipArchive implements Iterator {
 	* Required Iterator interface method.
 	*/
 	public function current() {
-		return $this->entries[$this->key];
+		return is_array($this->entries) ? $this->entries[$this->key] : null;
 	}
 
 
@@ -376,7 +493,9 @@ class SevenZipArchive implements Iterator {
 	* Required Iterator interface method.
 	*/
 	public function next() {
-		$this->key++;
+		if (is_array($this->entries)) {
+			$this->key++;
+		}
 	}
 
 
@@ -384,7 +503,12 @@ class SevenZipArchive implements Iterator {
 	* Required Iterator interface method.
 	*/
 	public function rewind() {
-		$this->key = $this->entries ? 0 : -1;
+		if (is_null($this->entries)) {
+			if (file_exists($this->file)) {
+				$this->entries = $this->_list();
+			}
+		}
+		$this->key = is_array($this->entries) && $this->entries ? 0 : -1;
 	}
 
 
@@ -392,7 +516,7 @@ class SevenZipArchive implements Iterator {
 	* Required Iterator interface method.
 	*/
 	public function valid() {
-		return ($this->key >= 0) && ($this->key < count($this->entries));
+		return is_array($this->entries) && ($this->key >= 0) && ($this->key < count($this->entries));
 	}
 
 }
