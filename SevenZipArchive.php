@@ -10,7 +10,7 @@
 * @author    Craig Manley
 * @copyright Copyright © 2014, Craig Manley (www.craigmanley.com)
 * @license   http://www.opensource.org/licenses/mit-license.php Licensed under MIT
-* @version   $Id: SevenZipArchive.php,v 1.4 2019/02/13 21:18:13 cmanley Exp $
+* @version   $Id: SevenZipArchive.php,v 1.5 2019/02/13 21:29:11 cmanley Exp $
 * @package   cmanley
 */
 
@@ -345,6 +345,16 @@ class SevenZipArchive implements Iterator {
 		}
 		$this->entries = null; $this->key = -1;
 		$stdout && preg_match('/(^|\n)Everything is Ok\s*$/', $stdout); // perhaps unnecessary if rc is reliable
+		return true;
+	}
+
+
+	/**
+	* Dummy method for interchangeability with ZipArchive.
+	*
+	* @return bool
+	*/
+	public function close() {
 		return true;
 	}
 
