@@ -3,7 +3,7 @@ SevenZipArchive
 
 PHP 7zip archive class.
 Currently it's a front end to the 7zr CLI executable. It's been tested on Linux only.
-It can list and extract from existing archives, as well as add files using string content since that's the only functionality I need so far.
+It can list and extract from existing archives, add directory contents, or add individual files using string content.
 
 Synopsis:
 ---------
