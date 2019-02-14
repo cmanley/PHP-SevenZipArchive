@@ -46,6 +46,7 @@ $archive->addDir('/path/to/add/');
 Most useful public methods:
 ---------------------------
 ```
+public function addDir($realdir): bool
 public function addFromString($localname, $contents): bool
 public function extractTo($destination, $names = null): bool
 public function entries(): array
