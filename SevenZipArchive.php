@@ -10,10 +10,17 @@
 * @author    Craig Manley
 * @copyright Copyright © 2014, Craig Manley (www.craigmanley.com)
 * @license   http://www.opensource.org/licenses/mit-license.php Licensed under MIT
-* @version   $Id: SevenZipArchive.php,v 1.5 2019/02/13 21:29:11 cmanley Exp $
+* @version   $Id: SevenZipArchive.php,v 1.6 2019/02/14 23:31:49 cmanley Exp $
 * @package   cmanley
 */
 
+
+// TODO: support compression levels and method options
+// TODO: support -scc{UTF-8|WIN|DOS} : set charset for console input/output; however not all versions of 7zr support it: 9.20 (on Debian 7 and 8) doesn't, 16.02 (on Debian 9) does.
+// TODO: support -scs option which doesn't seem to work with 7zr 9.20.
+// TODO: use namespaces, proper unit tests, a composer file, and make it suitable for packgist.
+// TODO: for simplification, perhaps drop Iterator interface support or use a getIterator() method to return a separate iterable object.
+// TODO: gather motivation and time to do all the above.
 
 
 /**
@@ -28,7 +35,6 @@ class SevenZipArchiveException extends Exception {}
 /**
 * 7-Zip archive class.
 * Front end to 7za or 7zr executable.
-* Currently only lists and extracts from existing archives.
 *
 * Example(s):
 * <pre>
@@ -61,7 +67,7 @@ class SevenZipArchiveException extends Exception {}
 *
 * @package  cmanley
 */
-class SevenZipArchive implements Iterator {
+class SevenZipArchive implements Countable, Iterator {
 
 	protected $file = null; // archive file
 	protected $key = -1; // iterator key
@@ -308,6 +314,53 @@ class SevenZipArchive implements Iterator {
 
 
 	/**
+	* Adds the contents of the given directory to the archive.
+	* This sometimes offers significantly better compression results than adding files individually.
+	*
+	* @param string $realdir
+	* @return bool
+	*/
+	public function addDir($realdir) {
+		if (!is_string($realdir)) {
+			throw new \InvalidArgumentException(gettype($realdir) . ' is not a legal realdir argument type');
+		}
+		if (!strlen($realdir)) {
+			throw new \InvalidArgumentException('Missing realdir argument');
+		}
+		if (!is_dir($realdir)) {
+			throw new \InvalidArgumentException('Directory "' . $realdir . '" does not exist');
+		}
+		// Make sure $realdir ends with '/.'
+		if (substr($realdir,-1) == '/') {
+			$realdir .= '.';
+		}
+		elseif (substr($realdir,-2) != '/.') {
+			$realdir .= '/.';
+		}
+
+		// How it's done:
+		// 7zr a -bb0 -bd -y -snl archive.7z /dir/containing/files/.
+		$rc = null;
+		$output = array();
+		$cmd = escapeshellcmd($this->binary) . ' a -bb0 -bd -y -snl ' . escapeshellarg($this->file) . ' ' . escapeshellarg($realdir);
+		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
+		$stdout = '';
+		$stderr = '';
+		$rc = $this->_proc_exec($cmd, null, $stdout, $stderr);
+		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
+		$this->debug && error_log(__METHOD__ . " Command stdout: $stdout\n");
+		$this->debug && error_log(__METHOD__ . " Command stderr: $stderr\n");
+		if ($rc) {
+			trigger_error("\"$cmd\" call failed with return code $rc and STDERR: $stderr", E_USER_ERROR);
+			return false;
+		}
+		$this->entries = null; $this->key = -1;
+		//return $stdout && preg_match('/(^|\n)Everything is Ok\s*$/', $stdout);
+		return true;
+	}
+
+
+	/**
 	* Adds a file to the archive using it's contents. Similar to http://www.php.net/manual/en/ziparchive.addfromstring.php
 	*
 	* @param string $localname name to add/update in the archive; may contain path parts
@@ -325,8 +378,6 @@ class SevenZipArchive implements Iterator {
 			throw new \InvalidArgumentException(gettype($contents) . ' is not a legal contents argument type');
 		}
 
-		// TODO: support compression levels and method options
-		// TODO: support -scc{UTF-8|WIN|DOS} : set charset for console input/output but not all versions of 7zr support it (9.20 (on Debian 7 and 8) doesn't, 16.02 (on Debian 9) does)
 		// How it's done:
 		// cat .gitignore | 7zr a -si'The €U/sucks/file.txt' test.7z
 		$rc = null;
@@ -340,11 +391,11 @@ class SevenZipArchive implements Iterator {
 		$this->debug && error_log(__METHOD__ . " Command stdout: $stdout\n");
 		$this->debug && error_log(__METHOD__ . " Command stderr: $stderr\n");
 		if ($rc) {
-			trigger_error("\"$cmd\" call failed with return code: $rc", E_USER_ERROR);
+			trigger_error("\"$cmd\" call failed with return code $rc and STDERR: $stderr", E_USER_ERROR);
 			return false;
 		}
 		$this->entries = null; $this->key = -1;
-		$stdout && preg_match('/(^|\n)Everything is Ok\s*$/', $stdout); // perhaps unnecessary if rc is reliable
+		//return $stdout && preg_match('/(^|\n)Everything is Ok\s*$/', $stdout);
 		return true;
 	}
 
@@ -416,8 +467,8 @@ class SevenZipArchive implements Iterator {
 			trigger_error("\"$cmd\" call failed with return code: $rc", E_USER_ERROR);
 			return false;
 		}
-		return in_array('Everything is Ok', $output); // perhaps unnecessary if rc is reliable
-		//return true;
+		//return in_array('Everything is Ok', $output);
+		return true;
 	}
 
 
@@ -453,6 +504,7 @@ class SevenZipArchive implements Iterator {
 
 	/**
 	* Returns the numer of entries.
+	* Required Countable interface method.
 	*
 	* @return int
 	*/
