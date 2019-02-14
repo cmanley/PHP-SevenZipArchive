@@ -36,7 +36,11 @@ $archive = new SevenZipArchive('new.7z');
 
 // Add some files using string content (emulates same named method in ZipArchive: http://www.php.net/manual/en/ziparchive.addfromstring.php)
 $archive->addFromString('Hello.txt', 'Hello, hello, turn your radio on.');
-$archive->addFromString('The €U/sucks/file.txt', "This is the contents.\n");
+$archive->addFromString('The â‚¬U/sucks/file.txt', "This is the contents.\n");
+
+// Adds the contents of the given directory to the archive.
+// This sometimes offers significantly better compression results than adding files individually.
+$archive->addDir('/path/to/add/');
 ```
 
 Most useful public methods:
