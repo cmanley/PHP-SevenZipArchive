@@ -10,14 +10,14 @@
 * @author    Craig Manley
 * @copyright Copyright © 2014, Craig Manley (www.craigmanley.com)
 * @license   http://www.opensource.org/licenses/mit-license.php Licensed under MIT
-* @version   $Id: SevenZipArchive.php,v 1.6 2019/02/14 23:31:49 cmanley Exp $
+* @version   $Id: SevenZipArchive.php,v 1.7 2019/02/21 15:19:50 cmanley Exp $
 * @package   cmanley
 */
 
 
 // TODO: support compression levels and method options
 // TODO: support -scc{UTF-8|WIN|DOS} : set charset for console input/output; however not all versions of 7zr support it: 9.20 (on Debian 7 and 8) doesn't, 16.02 (on Debian 9) does.
-// TODO: support -scs option which doesn't seem to work with 7zr 9.20.
+// TODO: support -scs option which doesn't seem to work with 7zr 9.20; this option does not exist in version 9.04 (Debian 6)
 // TODO: use namespaces, proper unit tests, a composer file, and make it suitable for packgist.
 // TODO: for simplification, perhaps drop Iterator interface support or use a getIterator() method to return a separate iterable object.
 // TODO: gather motivation and time to do all the above.
@@ -155,8 +155,6 @@ class SevenZipArchive implements Countable, Iterator {
 		if (!file_exists($this->file)) {
 			return array();
 		}
-		$rc = null;
-		$output = array();
 		$cmd = $this->binary . ' l';
 		/* TODO: this doesn't seem to work:
 		if (preg_match('/^UTF-/i', $this->internal_encoding)) {
@@ -171,10 +169,12 @@ class SevenZipArchive implements Countable, Iterator {
 		*/
 		$cmd .= ' ' . escapeshellarg($this->file);
 		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
+		$rc = null;
+		$output = array();
 		exec($cmd, $output, $rc);
 		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
 		if ($rc) {
-			$this->debug && error_log(__METHOD__ . ' Command output: ' . join("\n", $output));
+			$this->debug && error_log(__METHOD__ . ' output: ' . join("\n", $output));
 		}
 		if ($rc) {
 			throw new Exception("\"$cmd\" call failed with return code: $rc");
@@ -263,57 +263,6 @@ class SevenZipArchive implements Countable, Iterator {
 
 
 	/**
-	* Executes the given command with the given arguments.
-	*
-	* @param string $cmd pre-escaped command and arguments using escapeshellcmd() and escapeshellarg()
-	* @param string|null $stdin this is piped into the process
-	* @param string &$stdout receives the STDOUT.
-	* @param string &$stderr receives the STDERR.
-	* @return int exit code of command; 0 is success
-	*/
-	protected function _proc_exec($cmd, $stdin = null, &$stdout, &$stderr) {
-		$cmd = '(' . $cmd . ') 3>/dev/null; echo $? >&3'; // unreliable proc_close exitcode workaround
-		$this->debug && error_log(__METHOD__ . " $cmd");
-		$descriptors = array(
-			0 => array('pipe', 'r'),	// stdin is a pipe that the child will read from
-			1 => array('pipe', 'w'),	// stdout is a pipe that the child will write to
-			2 => array('pipe', 'w'),	// stderr is a pipe that the child will write to
-			3 => array('pipe', 'w'),	// unreliable proc_close exitcode workaround
-		);
-		$pipes = null;
-		$process = proc_open($cmd, $descriptors, $pipes);
-		if (!is_resource($process)) {
-			throw new Exception("Failed to open process '$cmd'.\n");
-		}
-		// $pipes now looks like this:
-		// 0 => writeable handle connected to child stdin
-		// 1 => readable handle connected to child stdout
-		// 2 => readable handle connected to child stderr
-		// 3 => readable handle connected to child exitcode
-		if ($stdin) {
-			fwrite($pipes[0], $stdin);
-		}
-		fclose($pipes[0]);
-
-		// It is important that you close any pipes before calling proc_close in order to avoid a deadlock.
-		$stdout = stream_get_contents($pipes[1]);
-		fclose($pipes[1]);
-		$stderr = stream_get_contents($pipes[2]);
-		fclose($pipes[2]);
-		$exitcode = stream_get_contents($pipes[3]);
-		fclose($pipes[3]);
-
-		$status = proc_get_status($process);
-		$rc = proc_close($process); // will return -1 if PHP was compiled with --enable-sigchild
-		$rc = $status && $status['running'] ? $rc : $status['exitcode'];
-		if (($rc == -1) && preg_match('/^(-?\d+)\s*$/', $exitcode, $matches)) { // unreliable proc_close exitcode workaround
-			$rc = (int) $matches[1];
-		}
-		return $rc;
-	}
-
-
-	/**
 	* Adds the contents of the given directory to the archive.
 	* This sometimes offers significantly better compression results than adding files individually.
 	*
@@ -340,22 +289,22 @@ class SevenZipArchive implements Countable, Iterator {
 
 		// How it's done:
 		// 7zr a -bb0 -bd -y -snl archive.7z /dir/containing/files/.
+		// -bb0 set output log level switch supported in 16.02, but not in 9.20.
+		// -snl store symbolic links as links switch supported in 16.02, but not in 9.20.
 		$rc = null;
 		$output = array();
-		$cmd = escapeshellcmd($this->binary) . ' a -bb0 -bd -y -snl ' . escapeshellarg($this->file) . ' ' . escapeshellarg($realdir);
+		$cmd = escapeshellcmd($this->binary) . ' a -bd -y ' . escapeshellarg($this->file) . ' ' . escapeshellarg($realdir);
 		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
-		$stdout = '';
-		$stderr = '';
-		$rc = $this->_proc_exec($cmd, null, $stdout, $stderr);
+		$rc = null;
+		$output = array();
+		exec("$cmd 2>&1", $output, $rc);
 		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
-		$this->debug && error_log(__METHOD__ . " Command stdout: $stdout\n");
-		$this->debug && error_log(__METHOD__ . " Command stderr: $stderr\n");
+		$this->debug && error_log(__METHOD__ . ' Output: ' . join("\n", $output) . "\n");
 		if ($rc) {
-			trigger_error("\"$cmd\" call failed with return code $rc and STDERR: $stderr", E_USER_ERROR);
+			trigger_error("\"$cmd\" call failed with return code $rc and output: " . join("\n", $output), E_USER_ERROR);
 			return false;
 		}
 		$this->entries = null; $this->key = -1;
-		//return $stdout && preg_match('/(^|\n)Everything is Ok\s*$/', $stdout);
 		return true;
 	}
 
@@ -384,18 +333,16 @@ class SevenZipArchive implements Countable, Iterator {
 		$output = array();
 		$cmd = escapeshellcmd($this->binary) . ' a -bd -y -si' . escapeshellarg($localname) . ' ' . escapeshellarg($this->file);
 		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
-		$stdout = '';
-		$stderr = '';
-		$rc = $this->_proc_exec($cmd, $contents, $stdout, $stderr);
+		$rc = null;
+		$output = array();
+		exec("$cmd 2>&1", $output, $rc);
 		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
-		$this->debug && error_log(__METHOD__ . " Command stdout: $stdout\n");
-		$this->debug && error_log(__METHOD__ . " Command stderr: $stderr\n");
+		$this->debug && error_log(__METHOD__ . ' output: ' . join("\n", $output) . "\n");
 		if ($rc) {
-			trigger_error("\"$cmd\" call failed with return code $rc and STDERR: $stderr", E_USER_ERROR);
+			trigger_error("\"$cmd\" call failed with return code $rc and output: " . join("\n", $output), E_USER_ERROR);
 			return false;
 		}
 		$this->entries = null; $this->key = -1;
-		//return $stdout && preg_match('/(^|\n)Everything is Ok\s*$/', $stdout);
 		return true;
 	}
 
@@ -457,17 +404,16 @@ class SevenZipArchive implements Countable, Iterator {
 			$cmd .= ' ' . join(' ', array_map(function($x) { return escapeshellarg($x); }, $names));
 		}
 		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
-		exec($cmd, $output, $rc);
+		$rc = null;
+		$output = array();
+		exec("$cmd 2>&1", $output, $rc);
 		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
-		if ($rc) {
-			$this->debug && error_log(__METHOD__ . ' Command output: ' . join("\n", $output));
-		}
+		$this->debug && error_log(__METHOD__ . ' Output: ' . join("\n", $output) . "\n");
 		if ($rc) {
 			//throw new Exception("\"$cmd\" call failed with return code: $rc");
 			trigger_error("\"$cmd\" call failed with return code: $rc", E_USER_ERROR);
 			return false;
 		}
-		//return in_array('Everything is Ok', $output);
 		return true;
 	}
 
