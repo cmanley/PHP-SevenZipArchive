@@ -5,7 +5,7 @@ PHP 7zip archive class.
 Currently it's a front end to the 7zr CLI executable. It's been tested on Linux only.
 It can list and extract from existing archives, add directory contents, or add individual files using string content.
 
-### Synopsis
+### Example of extracting from an existing archive
 ```php
 // Open an existing archive.
 $archive = new SevenZipArchive('docs.7z');
@@ -29,6 +29,7 @@ $archive->extractTo('.', 'test.txt');	// emulates http://www.php.net/manual/en/z
 $archive->extractTo('.');
 ```
 
+### Example of adding files to a new/existing archive
 ```php
 // Open an existing or create a new archive
 $archive = new SevenZipArchive('new.7z');
@@ -42,7 +43,7 @@ $archive->addFromString('The €U/sucks/file.txt', "This is the contents.\n");
 $archive->addDir('/path/to/add/');
 ```
 
-### Most useful public methods:
+### Most useful public methods
 ```php
 public function addDir($realdir): bool
 public function addFromString($localname, $contents): bool
