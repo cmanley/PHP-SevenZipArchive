@@ -18,8 +18,10 @@ foreach ($archive as $entry) {
 	print_r($entry);
 }
 
-# Extract a single contained file by name:
+# Extract a single contained file by name (all subdirs in the extracted file name are automatically created)
 $archive->extractTo('.', 'The €U/sucks/file.txt');
 
-# Extract all contained files:
-#$archive->extractTo('./');
+# Extract all contained files to an existing directory:
+$extract_to_dir = __DIR__ . '/all_extracted_files';
+is_dir($extract_to_dir) || mkdir($extract_to_dir) || die("Failed to mkdir('$extract_to_dir')");
+$archive->extractTo($extract_to_dir);
