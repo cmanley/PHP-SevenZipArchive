@@ -10,17 +10,17 @@
 * @author    Craig Manley
 * @copyright Copyright © 2014, Craig Manley (www.craigmanley.com)
 * @license   http://www.opensource.org/licenses/mit-license.php Licensed under MIT
-* @version   $Id: SevenZipArchive.php,v 1.7 2019/02/21 15:19:50 cmanley Exp $
+* @version   1.8
 * @package   cmanley
 */
 
 
-// TODO: support compression levels and method options
-// TODO: support -scc{UTF-8|WIN|DOS} : set charset for console input/output; however not all versions of 7zr support it: 9.20 (on Debian 7 and 8) doesn't, 16.02 (on Debian 9) does.
-// TODO: support -scs option which doesn't seem to work with 7zr 9.20; this option does not exist in version 9.04 (Debian 6)
-// TODO: use namespaces, proper unit tests, a composer file, and make it suitable for packgist.
-// TODO: for simplification, perhaps drop Iterator interface support or use a getIterator() method to return a separate iterable object.
-// TODO: gather motivation and time to do all the above.
+# TODO: support compression levels and method options
+# TODO: support -scc{UTF-8|WIN|DOS} : set charset for console input/output; however not all versions of 7zr support it: 9.20 (on Debian 7 and 8) doesn't, 16.02 (on Debian 9) does.
+# TODO: support -scs option which doesn't seem to work with 7zr 9.20; this option does not exist in version 9.04 (Debian 6)
+# TODO: use namespaces, proper unit tests, a composer file, and make it suitable for packgist.
+# TODO: for simplification, perhaps drop Iterator interface support or use a getIterator() method to return a separate iterable object.
+# TODO: gather motivation and time to do all the above.
 
 
 /**
@@ -40,22 +40,25 @@ class SevenZipArchiveException extends Exception {}
 * <pre>
 *	$archive = new SevenZipArchive('docs.7z');
 *
-*	// Show number of contained files:
+*	# Test integrity of archive:
+*	print 'Archive is ' . ($archive->test() ? 'OK' : 'broken') . "\n";
+*
+*	# Show number of contained files:
 *	print $archive->count() . " file(s) in archive\n";
 *
-*	// Show info about the first contained file:
+*	# Show info about the first contained file:
 *	$entry = $archive->get(0);
 *	print 'First file name: ' . $entry['Name'] . "\n";
 *
-*	// Iterate over all the contained files in archive, and dump all their info:
+*	# Iterate over all the contained files in archive, and dump all their info:
 *	foreach ($archive as $entry) {
 *		print_r($entry);
 *	}
 *
-*	// Extract a single contained file by name into the current directory:
+*	# Extract a single contained file by name into the current directory:
 *	$archive->extractTo('.', 'test.txt');
 *
-*	// Extract all contained files:
+*	# Extract all contained files:
 *	$archive->extractTo('.');
 * </pre>
 *
@@ -69,12 +72,12 @@ class SevenZipArchiveException extends Exception {}
 */
 class SevenZipArchive implements Countable, Iterator {
 
-	protected $file = null; // archive file
-	protected $key = -1; // iterator key
-	protected $entries = null; // Array of associative arrays
-	protected $meta = null; // Associative array of meta data from last list command.
+	protected $file = null; # archive file
+	protected $key = -1; # iterator key
+	protected $entries = null; # Array of associative arrays
+	protected $meta = null; # Associative array of meta data from last list command.
 
-	// Options:
+	# Options:
 	protected $debug = false;
 	protected $internal_encoding = null;
 	protected $binary = null;
@@ -97,15 +100,15 @@ class SevenZipArchive implements Countable, Iterator {
 		if (!strlen($file)) {
 			throw new \InvalidArgumentException('Missing file argument');
 		}
-		//if (!file_exists($file)) {
-		//	throw new \InvalidArgumentException("File '$file' not found"); // TODO: support create mode
-		//}
+		#if (!file_exists($file)) {
+		#	throw new \InvalidArgumentException("File '$file' not found"); # TODO: support create mode
+		#}
 		$this->file = $file;
 		if (!is_array($options)) {
 			$options = array();
 		}
 
-		// Get the options.
+		# Get the options.
 		if ($options) {
 			foreach ($options as $key => $value) {
 				if (in_array($key, array('debug'))) {
@@ -133,16 +136,16 @@ class SevenZipArchive implements Countable, Iterator {
 				$this->binary = '7za';
 			}
 			else {
-				$this->binary = '7zr'; // minimal version of 7za
+				$this->binary = '7zr'; # minimal version of 7za
 			}
 		}
 		$this->debug && error_log(__METHOD__ . ' Archive file: ' . $this->file);
 		$this->debug && error_log(__METHOD__ . ' Binary: ' . $this->binary);
 		$this->debug && error_log(__METHOD__ . ' Internal encoding: ' . $this->internal_encoding);
 
-		// Load entries.
-		//$this->entries = $this->_list();
-		//$this->rewind();
+		# Load entries.
+		#$this->entries = $this->_list();
+		#$this->rewind();
 	}
 
 
@@ -207,9 +210,9 @@ class SevenZipArchive implements Countable, Iterator {
 		$entries_field_widths = array();
 		$entries = array();
 		foreach ($output as $line) {
-			//$line = trim($line);
+			#$line = trim($line);
 
-			// Read until meta data starts
+			# Read until meta data starts
 			if (!$meta_started) {
 				if ($line == '--') {
 					$meta_started = true;
@@ -220,7 +223,7 @@ class SevenZipArchive implements Countable, Iterator {
 				continue;
 			}
 
-			// Read meta data until entries start
+			# Read meta data until entries start
 			if (!$entries_started) {
 				if (preg_match('/^(Type|Method|Solid|Blocks|Physical Size|Headers Size) = (.*)/', $line, $matches)) {
 					$meta[$matches[1]] = $matches[2];
@@ -242,7 +245,7 @@ class SevenZipArchive implements Countable, Iterator {
 				continue;
 			}
 
-			// Read entries until end
+			# Read entries until end
 			if (substr($line,0,1) == '-') {
 				break;
 			}
@@ -279,7 +282,7 @@ class SevenZipArchive implements Countable, Iterator {
 		if (!is_dir($realdir)) {
 			throw new \InvalidArgumentException('Directory "' . $realdir . '" does not exist');
 		}
-		// Make sure $realdir ends with '/.'
+		# Make sure $realdir ends with '/.'
 		if (substr($realdir,-1) == '/') {
 			$realdir .= '.';
 		}
@@ -287,10 +290,10 @@ class SevenZipArchive implements Countable, Iterator {
 			$realdir .= '/.';
 		}
 
-		// How it's done:
-		// 7zr a -bb0 -bd -y -snl archive.7z /dir/containing/files/.
-		// -bb0 set output log level switch supported in 16.02, but not in 9.20.
-		// -snl store symbolic links as links switch supported in 16.02, but not in 9.20.
+		# How it's done:
+		# 7zr a -bb0 -bd -y -snl archive.7z /dir/containing/files/.
+		# -bb0 set output log level switch supported in 16.02, but not in 9.20.
+		# -snl store symbolic links as links switch supported in 16.02, but not in 9.20.
 		$rc = null;
 		$output = array();
 		$cmd = escapeshellcmd($this->binary) . ' a -bd -y ' . escapeshellarg($this->file) . ' ' . escapeshellarg($realdir);
@@ -327,8 +330,8 @@ class SevenZipArchive implements Countable, Iterator {
 			throw new \InvalidArgumentException(gettype($contents) . ' is not a legal contents argument type');
 		}
 
-		// How it's done:
-		// cat .gitignore | 7zr a -si'The €U/sucks/file.txt' test.7z
+		# How it's done:
+		# cat .gitignore | 7zr a -si'The €U/sucks/file.txt' test.7z
 		$rc = null;
 		$output = array();
 		$cmd = escapeshellcmd($this->binary) . ' a -bd -y -si' . escapeshellarg($localname) . ' ' . escapeshellarg($this->file);
@@ -396,7 +399,7 @@ class SevenZipArchive implements Countable, Iterator {
 			}
 		}
 
-		// TODO: make path and executable configurable
+		# TODO: make path and executable configurable
 		$rc = null;
 		$output = array();
 		$cmd = $this->binary . ' x -bd -y -o' . escapeshellarg($destination) . ' ' . escapeshellarg($this->file);
@@ -410,7 +413,7 @@ class SevenZipArchive implements Countable, Iterator {
 		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
 		$this->debug && error_log(__METHOD__ . ' Output: ' . join("\n", $output) . "\n");
 		if ($rc) {
-			//throw new Exception("\"$cmd\" call failed with return code: $rc");
+			#throw new Exception("\"$cmd\" call failed with return code: $rc");
 			trigger_error("\"$cmd\" call failed with return code: $rc", E_USER_ERROR);
 			return false;
 		}
@@ -426,7 +429,7 @@ class SevenZipArchive implements Countable, Iterator {
 	public function metadata() {
 		if (is_null($this->meta)) {
 			if (file_exists($this->file)) {
-				$this->_list();	// Sets $this->meta
+				$this->_list();	# Sets $this->meta
 			}
 		}
 		return $this->meta;
@@ -445,6 +448,42 @@ class SevenZipArchive implements Countable, Iterator {
 			}
 		}
 		return is_null($this->entries) ? array() : $this->entries;
+	}
+
+
+	/**
+	* Tests the archive's integrity.
+	*
+	* @return boolean
+	*/
+	public function test() {
+		if (!file_exists($this->file)) {
+			return false;
+		}
+		$cmd = $this->binary . ' t';
+		$cmd .= ' ' . escapeshellarg($this->file) . ' 2>&1';
+		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
+		$rc = null;
+		$output = array();
+		exec($cmd, $output, $rc);
+		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
+		$result = false;
+		if ($rc) {
+			$this->debug && error_log(__METHOD__ . ' output: ' . join("\n", $output));
+			if ($rc != 2) {	# 2 is the exit code when the file is corrupt or unreadable
+				throw new Exception("\"$cmd\" call failed with return code: $rc");
+			}
+		}
+		else {
+			$result = true;
+			#foreach ($output as $line) {
+			#	if ($line == 'Everything is Ok') {	# verification was successful
+			#		$result = true;
+			#		break;
+			#	}
+			#}
+		}
+		return $result;
 	}
 
 
