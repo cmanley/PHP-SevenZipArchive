@@ -4,22 +4,24 @@
 *
 * Dependencies:
 * <pre>
-* PHP 5.3 or higher
+* Alpine packages: 7zip
+* Debian packages: p7zip
 * </pre>
 *
 * @author    Craig Manley
 * @copyright Copyright © 2014, Craig Manley (www.craigmanley.com)
 * @license   http://www.opensource.org/licenses/mit-license.php Licensed under MIT
-* @version   1.8
+* @version   1.9
 * @package   cmanley
 */
 
-
+# TODO: test 7z command in Alpine linux.
 # TODO: support compression levels and method options
 # TODO: support -scc{UTF-8|WIN|DOS} : set charset for console input/output; however not all versions of 7zr support it: 9.20 (on Debian 7 and 8) doesn't, 16.02 (on Debian 9) does.
 # TODO: support -scs option which doesn't seem to work with 7zr 9.20; this option does not exist in version 9.04 (Debian 6)
-# TODO: use namespaces, proper unit tests, a composer file, and make it suitable for packgist.
+# TODO: use namespaces, type hinting, proper unit tests, a composer file, and make it suitable for packagist.
 # TODO: for simplification, perhaps drop Iterator interface support or use a getIterator() method to return a separate iterable object.
+# TODO: use more exceptions with clear messages instead of returning booleans
 # TODO: gather motivation and time to do all the above.
 
 
@@ -34,7 +36,7 @@ class SevenZipArchiveException extends Exception {}
 
 /**
 * 7-Zip archive class.
-* Front end to 7za or 7zr executable.
+* Front end to 7za or 7zr or 7z executable.
 *
 * Example(s):
 * <pre>
@@ -81,6 +83,7 @@ class SevenZipArchive implements Countable, Iterator {
 	protected $debug = false;
 	protected $internal_encoding = null;
 	protected $binary = null;
+	protected $unlink = false;
 
 	/**
 	* Constructor.
@@ -90,6 +93,7 @@ class SevenZipArchive implements Countable, Iterator {
 	*	- debug: boolean, if true, then debug messages are emitted using error_log()
 	*	- binary: default is "7za" for Windows, else "7zr"
 	*	- internal_encoding: default is mb_internal_encoding()
+	*	- unlink: boolean, if true, then delete the given file when this object is destroyed.
 	* @throws SevenZipArchiveException
 	* @throws \InvalidArgumentException
 	*/
@@ -111,7 +115,7 @@ class SevenZipArchive implements Countable, Iterator {
 		# Get the options.
 		if ($options) {
 			foreach ($options as $key => $value) {
-				if (in_array($key, array('debug'))) {
+				if (in_array($key, array('debug', 'unlink'))) {
 					if (!(is_null($value) || is_bool($value) || is_int($value))) {
 						throw new \InvalidArgumentException("The '$key' option must be a boolean");
 					}
@@ -136,7 +140,20 @@ class SevenZipArchive implements Countable, Iterator {
 				$this->binary = '7za';
 			}
 			else {
-				$this->binary = '7zr'; # minimal version of 7za
+				foreach ([
+					'7zr',	# Debian
+					'7z',	# Alpine (untested)
+				] as $candidate) {
+					$rc = null;
+					$bin = system("command -v $candidate", $rc);
+					if ($bin && ($rc == 0)) {
+						$this->binary = $bin;
+						break;
+					}
+				}
+				if (!$this->binary) {
+					throw new Exception('Failed to locate 7zr/7z command');
+				}
 			}
 		}
 		$this->debug && error_log(__METHOD__ . ' Archive file: ' . $this->file);
@@ -146,6 +163,23 @@ class SevenZipArchive implements Countable, Iterator {
 		# Load entries.
 		#$this->entries = $this->_list();
 		#$this->rewind();
+	}
+
+
+	/**
+	* Destructor.
+	*/
+	public function __destruct() {
+		#$this->unlink && file_exists($this->file) && unlink($this->file);
+		$this->debug && error_log(__METHOD__ . ' entered; must unlink ' . $this->file . ': ' . intval($this->unlink));
+		if ($this->unlink) {
+			if (file_exists($this->file)) {
+				unlink($this->file) && $this->debug && error_log(__METHOD__ . ' deleted ' . $this->file);
+			}
+			else {
+				$this->debug && error_log(__METHOD__ . ' file ' . $this->file . ' is missing');
+			}
+		}
 	}
 
 
@@ -266,6 +300,168 @@ class SevenZipArchive implements Countable, Iterator {
 
 
 	/**
+	* Executes the given command, allowing you to pass it STDIN data, and capture it's STDOUT and STDERR.
+	* The exit code of the process is returned.
+	*
+	* @param array $command				- array of unescaped command and it's optional arguments
+	* @param string|resource $stdin		- optional string or readable stream resource
+	* @param string|resource &$stdout	- optional scalar reference or writeable stream resource
+	* @param string|resource &$stderr	- optional scalar reference or writeable stream resource
+	* @return int exit code
+	*/
+	protected function _proc_exec(array $command, $stdin = null, &$stdout = null, &$stderr = null, $debug = false) {	# copied from my proc_exec() v1.7 function
+		if (!$command) {
+			throw new InvalidArgumentException('No command given to execute');
+		}
+		if (!(is_null($stdin) || is_scalar($stdin) || is_resource($stdin))) {
+			throw new InvalidArgumentException('Illegal argument type (' . gettype($stdin) . ') given for optional stdin argument');
+		}
+		$stdin_meta = null;
+		if (is_resource($stdin)) {
+			$x = get_resource_type($stdin);
+			if ($x != 'stream') {
+				throw new InvalidArgumentException("stdin is a $x resource instead of a stream resource");
+			}
+			$stdin_meta = stream_get_meta_data($stdin);
+			$debug && error_log('STDIN stream_get_meta_data: ' . var_export($stdin_meta, true));
+		}
+		$stdout_meta = null;
+		if (is_resource($stdout)) {
+			$x = get_resource_type($stdout);
+			if ($x != 'stream') {
+				throw new InvalidArgumentException("stdout is a $x resource instead of a stream resource");
+			}
+			$stdout_meta = stream_get_meta_data($stdout);
+			$debug && error_log('STDOUT stream_get_meta_data: ' . var_export($stdout_meta, true));
+			if (strpos($stdout_meta['mode'], 'r') !== false) {
+				throw new InvalidArgumentException('stdout stream must be writeable, but is read-only');
+			}
+		}
+		else {
+			$stdout = '';
+		}
+		$stderr_meta = null;
+		if (is_resource($stderr)) {
+			$x = get_resource_type($stderr);
+			if ($x != 'stream') {
+				throw new InvalidArgumentException("stderr is a $x resource instead of a stream resource");
+			}
+			$stderr_meta = stream_get_meta_data($stderr);
+			$debug && error_log('STDERR stream_get_meta_data: ' . var_export($stderr_meta, true));
+			if (strpos($stderr_meta['mode'], 'r') !== false) {
+				throw new InvalidArgumentException('stderr stream must be writeable, but is read-only');
+			}
+		}
+		else {
+			$stderr = '';
+		}
+
+		$unreliable_proc_close = false; # proc_close() will return -1 if PHP was compiled with --enable-sigchild, which is used enabled for users of Oracle who are having <defunc> processes.
+		/*
+		Notes:
+		php-config requires: php5-dev
+		php-config --configure-options | grep sigchild
+		php_uname('v'): #1 SMP Debian 3.2.60-1+deb7u1
+		*/
+		$cmd = escapeshellcmd(array_shift($command));
+		if ($command) {
+			$cmd .= ' ' . join(' ', array_map(function($x) { return escapeshellarg($x); }, $command));
+		}
+		$descriptors = array(
+			#array('pipe', 'r'),	# stdin is a pipe that the child will read from
+			$stdin_meta  && ($stdin_meta['stream_type']  == 'STDIO') ? $stdin  : array('pipe', 'r'),
+			$stdout_meta && ($stdout_meta['stream_type'] == 'STDIO') ? $stdout : array('pipe', 'w'),
+			$stderr_meta && ($stderr_meta['stream_type'] == 'STDIO') ? $stderr : array('pipe', 'w'),
+		);
+		if ($unreliable_proc_close) {
+			$descriptors []= array('pipe', 'w');
+			$cmd = "($cmd) 3>/dev/null; echo \$? >&3";
+		}
+		$pipes = null;
+		$debug && error_log(__METHOD__ . " Call proc_open with command: $cmd");
+		$process = proc_open($cmd, $descriptors, $pipes);
+		if (!is_resource($process)) {
+			throw new Exception("Failed to open process '$cmd'.\n");
+		}
+		# $pipes now looks like this:
+		# 0 => writeable handle connected to child stdin
+		# 1 => readable handle connected to child stdout
+		# 2 => readable handle connected to child stderr
+		# 3 => readable handle connected to child exitcode (if proc_close() workaround enabled)
+		#isset($pipes[1]) && stream_set_blocking($pipes[1], false);
+		#isset($pipes[2]) && stream_set_blocking($pipes[2], false);
+		if (is_scalar($stdin) && strlen($stdin)) {
+			fwrite($pipes[0], $stdin);
+			unset($stdin);
+		}
+		elseif (is_resource($stdin)) {
+			if ($stdin_meta  && ($stdin_meta['stream_type']  == 'STDIO')) {
+				# do nothing
+			}
+			else {
+				$debug && error_log(__METHOD__ . ' Call stream_copy_to_stream for STDIN');
+				$bytes_written = stream_copy_to_stream($stdin, $pipes[0]);
+				$debug && error_log(__METHOD__ . ' stream_copy_to_stream for STDIN returned ' . var_export($bytes_written, true));
+				if ($bytes_written === false) {
+					throw new Exception('Failed to copy given resource into STDIN of process');
+				}
+			}
+		}
+		isset($pipes[0]) && fclose($pipes[0]);
+		if (is_resource($stdout)) {
+			if ($stdout_meta  && ($stdout_meta['stream_type']  == 'STDIO')) {
+				# do nothing
+			}
+			else {
+				$debug && error_log(__METHOD__ . ' Call stream_copy_to_stream for STDOUT');
+				$bytes_written = stream_copy_to_stream($pipes[1], $stdout);
+				$debug && error_log(__METHOD__ . ' stream_copy_to_stream for STDOUT returned ' . var_export($bytes_written, true));
+			}
+		}
+		else {
+			$stdout = stream_get_contents($pipes[1]);
+		}
+		isset($pipes[1]) && fclose($pipes[1]);
+		if (is_resource($stderr)) {
+			if ($stderr_meta  && ($stderr_meta['stream_type']  == 'STDIO')) {
+				# do nothing
+			}
+			else {
+				$debug && error_log(__METHOD__ . ' Call stream_copy_to_stream for STDERR');
+				$bytes_written = stream_copy_to_stream($pipes[2], $stderr);
+				$debug && error_log(__METHOD__ . ' stream_copy_to_stream for STDERR returned ' . var_export($bytes_written, true));
+			}
+		}
+		else {
+			$stderr = stream_get_contents($pipes[2]);
+		}
+		isset($pipes[2]) && fclose($pipes[2]);
+		$exitcode = null;
+		if ($unreliable_proc_close) {
+			$exitcode = stream_get_contents($pipes[3]);
+			fclose($pipes[3]);
+		}
+		else {
+			$status = proc_get_status($process);
+			if (!$status['running']) { # there's no guarantee that it'll still be running when proc_close() is called.
+				$exitcode = $status['exitcode'];
+			}
+			$debug && error_log(__METHOD__ . ' proc_get_status returned ' . var_export($status, true));
+		}
+		$rc = proc_close($process); # will return -1 if PHP was compiled with --enable-sigchild
+		$debug && error_log(__METHOD__ . ' proc_close returned ' . var_export($rc, true));
+		if ($unreliable_proc_close) {
+			if (preg_match('/^(-?\d+)\s*$/', $exitcode, $matches)) { # unreliable proc_close exitcode workaround
+				$rc = (int) $matches[1];
+			}
+		}
+		$result = is_null($exitcode) ? $rc : $exitcode;
+		$debug && error_log(__METHOD__ . " return $result");
+		return $result;
+	}
+
+
+	/**
 	* Adds the contents of the given directory to the archive.
 	* This sometimes offers significantly better compression results than adding files individually.
 	*
@@ -314,6 +510,7 @@ class SevenZipArchive implements Countable, Iterator {
 
 	/**
 	* Adds a file to the archive using it's contents. Similar to http://www.php.net/manual/en/ziparchive.addfromstring.php
+	* However, using addDir() with multiple files results in much better compression overall, and it's probably faster too since less processes need to be spawned.
 	*
 	* @param string $localname name to add/update in the archive; may contain path parts
 	* @param string $contents
@@ -333,19 +530,27 @@ class SevenZipArchive implements Countable, Iterator {
 		# How it's done:
 		# cat .gitignore | 7zr a -si'The €U/sucks/file.txt' test.7z
 		$rc = null;
-		$output = array();
-		$cmd = escapeshellcmd($this->binary) . ' a -bd -y -si' . escapeshellarg($localname) . ' ' . escapeshellarg($this->file);
-		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
-		$rc = null;
-		$output = array();
-		exec("$cmd 2>&1", $output, $rc);
+		$cmd = [
+			$this->binary,
+			'a',
+			'-bd',
+			'-y',
+			'-si' . $localname,
+			$this->file,
+		];
+		$this->debug && error_log(__METHOD__ . ' Unescaped command: ' . join(' ', $cmd));
+		$stdout = '';
+		$stderr = '';
+		$rc = $this->_proc_exec($cmd, $contents, $stdout, $stderr);
 		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
-		$this->debug && error_log(__METHOD__ . ' output: ' . join("\n", $output) . "\n");
+		$this->debug && error_log(__METHOD__ . " Command stdout: $stdout\n");
+		$this->debug && error_log(__METHOD__ . " Command stderr: $stderr\n");
 		if ($rc) {
-			trigger_error("\"$cmd\" call failed with return code $rc and output: " . join("\n", $output), E_USER_ERROR);
+			trigger_error('Command (' . join(' ', $cmd) . ") call failed with return code $rc and STDERR: $stderr", E_USER_ERROR);
 			return false;
 		}
 		$this->entries = null; $this->key = -1;
+		#return $stdout && preg_match('/(^|\n)Everything is Ok\s*$/', $stdout);
 		return true;
 	}
 
@@ -454,7 +659,7 @@ class SevenZipArchive implements Countable, Iterator {
 	/**
 	* Tests the archive's integrity.
 	*
-	* @return boolean
+	* @return bool
 	*/
 	public function test() {
 		if (!file_exists($this->file)) {
@@ -512,7 +717,7 @@ class SevenZipArchive implements Countable, Iterator {
 	/**
 	* Sets debug mode on/off.
 	*
-	* @param boolean $value
+	* @param bool $value
 	* @return void
 	*/
 	public function setDebug($value) {
