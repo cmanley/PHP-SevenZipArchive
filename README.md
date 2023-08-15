@@ -37,12 +37,13 @@ $archive->extractTo('.');
 # Open an existing or create a new archive
 $archive = new SevenZipArchive('new.7z');
 
-# Adds the contents of the given directory to the archive. This offers the best compression and performance (especially if using tmpfs for storage).
+# Adds the contents of the given directory to the archive.
 # This sometimes offers significantly better compression results than adding files individually.
 $archive->addDir('/path/to/add/');
 
-# Add some files using string content. Not recommended as addDir() results in better compression and performance.
-#   This emulates same named method in ZipArchive: http://www.php.net/manual/en/ziparchive.addfromstring.php)
+# Add some files using string content.
+# Not recommended as addDir() results in better compression and performance.
+# This emulates same named method in ZipArchive: http://www.php.net/manual/en/ziparchive.addfromstring.php)
 $archive->addFromString('Hello.txt', 'Hello, hello, turn your radio on.');
 $archive->addFromString('/path/file.txt', "This is the contents.\n");
 ```
