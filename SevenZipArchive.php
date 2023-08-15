@@ -11,7 +11,7 @@
 * @author    Craig Manley
 * @copyright Copyright © 2014, Craig Manley (www.craigmanley.com)
 * @license   http://www.opensource.org/licenses/mit-license.php Licensed under MIT
-* @version   1.10
+* @version   1.11
 * @package   cmanley
 */
 
@@ -117,13 +117,19 @@ class SevenZipArchive implements Countable, Iterator {
 			else {
 				foreach ([
 					'7zr',	# Debian
-					'7z',	# Alpine (untested)
+					'7z',	# Alpine (untested), and Debian
 				] as $candidate) {
-					$rc = null;
-					$bin = system("command -v $candidate", $rc);
-					if ($bin && ($rc == 0)) {
-						$this->binary = $bin;
-						break;
+					$bin = null;
+					if (1) {
+						$cmd = 'command -v ' . escapeshellarg($candidate);
+						$output = array();
+						$rc = null;
+						exec($cmd, $output, $rc);
+						$this->debug && error_log(__METHOD__ . " $cmd: rc=$rc");
+						if (!$rc && $output) {
+							$this->binary = end($output);
+							break;
+						}
 					}
 				}
 				if (!$this->binary) {
