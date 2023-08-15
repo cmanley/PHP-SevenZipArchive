@@ -11,7 +11,7 @@
 * @author    Craig Manley
 * @copyright Copyright © 2014, Craig Manley (www.craigmanley.com)
 * @license   http://www.opensource.org/licenses/mit-license.php Licensed under MIT
-* @version   1.9
+* @version   1.10
 * @package   cmanley
 */
 
@@ -37,32 +37,7 @@ class SevenZipArchiveException extends Exception {}
 /**
 * 7-Zip archive class.
 * Front end to 7za or 7zr or 7z executable.
-*
-* Example(s):
-* <pre>
-*	$archive = new SevenZipArchive('docs.7z');
-*
-*	# Test integrity of archive:
-*	print 'Archive is ' . ($archive->test() ? 'OK' : 'broken') . "\n";
-*
-*	# Show number of contained files:
-*	print $archive->count() . " file(s) in archive\n";
-*
-*	# Show info about the first contained file:
-*	$entry = $archive->get(0);
-*	print 'First file name: ' . $entry['Name'] . "\n";
-*
-*	# Iterate over all the contained files in archive, and dump all their info:
-*	foreach ($archive as $entry) {
-*		print_r($entry);
-*	}
-*
-*	# Extract a single contained file by name into the current directory:
-*	$archive->extractTo('.', 'test.txt');
-*
-*	# Extract all contained files:
-*	$archive->extractTo('.');
-* </pre>
+* See README.md for examples and instructions.
 *
 * Which binary:
 *	For Windows there are 2 possible binaries to download from http://www.7-zip.org/download.html
@@ -492,7 +467,7 @@ class SevenZipArchive implements Countable, Iterator {
 		# -snl store symbolic links as links switch supported in 16.02, but not in 9.20.
 		$rc = null;
 		$output = array();
-		$cmd = escapeshellcmd($this->binary) . ' a -bd -y ' . escapeshellarg($this->file) . ' ' . escapeshellarg($realdir);
+		$cmd = escapeshellcmd($this->binary) . ' a -sae -bd -y ' . escapeshellarg($this->file) . ' ' . escapeshellarg($realdir);
 		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
 		$rc = null;
 		$output = array();
@@ -532,10 +507,11 @@ class SevenZipArchive implements Countable, Iterator {
 		$rc = null;
 		$cmd = [
 			$this->binary,
-			'a',
-			'-bd',
-			'-y',
-			'-si' . $localname,
+			'a',	# add/create
+			'-sae',	# set Archive name mode to exact name as specified in command.
+			'-bd',	# disable progress indicator
+			'-y',	# assume Yes on all queries
+			'-si' . $localname,	# read data from stdin for $localname
 			$this->file,
 		];
 		$this->debug && error_log(__METHOD__ . ' Unescaped command: ' . join(' ', $cmd));
@@ -623,6 +599,16 @@ class SevenZipArchive implements Countable, Iterator {
 			return false;
 		}
 		return true;
+	}
+
+
+	/**
+	* Returns the archive file name as passed to the constructor.
+	*
+	* @return string
+	*/
+	public function getArchiveFileName() {	# from PHP 8.1 a public readonly string $filename property can be added similar to ZipArchive
+		return $this->file;
 	}
 
 
