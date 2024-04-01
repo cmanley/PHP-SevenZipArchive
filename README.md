@@ -11,7 +11,7 @@ It can list and extract from existing archives, add directory contents, or add i
 $archive = new SevenZipArchive('docs.7z');
 
 # Print the archive file name passed to the constructor:
-print $archive->getArchiveFileName() . "\n";	# prints docs.7z
+print $archive->filename . "\n";	# prints docs.7z
 
 # Test the integrity of the archive:
 print 'Archive is ' . ($archive->test() ? 'OK' : 'broken') . "\n";
@@ -65,14 +65,14 @@ $archive = new \SevenZipArchive($tmp7z_file, [
 	'unlink' => true,	# causes $tmp7z_file to deleted when the object is destroyed
 ]);
 # ... add files to it
-# ... then do something with $archive->getArchiveFileName() before the object is destroyed and the temporary file is removed.
+# ... then do something with $archive->filename before the object is destroyed and the temporary file is removed.
 ```
 
-### Most useful public methods
+### Most useful public methods and properties
 ```php
+public readonly string $filename;
 public function addDir(string $realdir): bool
 public function addFromString(string $localname, string $contents): bool
 public function extractTo(string $destination, array|string $names = null): bool
 public function entries(): array
-public function getArchiveFileName(): string
 public function test(): bool
