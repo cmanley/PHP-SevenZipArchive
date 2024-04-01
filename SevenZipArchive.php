@@ -11,7 +11,7 @@
 * @author    Craig Manley
 * @copyright Copyright © 2014, Craig Manley (www.craigmanley.com)
 * @license   http://www.opensource.org/licenses/mit-license.php Licensed under MIT
-* @version   1.11
+* @version   1.12
 * @package   cmanley
 */
 
@@ -49,7 +49,8 @@ class SevenZipArchiveException extends Exception {}
 */
 class SevenZipArchive implements Countable, Iterator {
 
-	protected $file = null; # archive file
+	public readonly string $filename;	# archive file
+
 	protected $key = -1; # iterator key
 	protected $entries = null; # Array of associative arrays
 	protected $meta = null; # Associative array of meta data from last list command.
@@ -72,7 +73,7 @@ class SevenZipArchive implements Countable, Iterator {
 	* @throws SevenZipArchiveException
 	* @throws \InvalidArgumentException
 	*/
-	function __construct($file, array $options = null) {
+	function __construct(string $file, array $options = null) {
 		if (!is_string($file)) {
 			throw new \InvalidArgumentException(gettype($file) . ' is not a legal file argument type');
 		}
@@ -82,21 +83,21 @@ class SevenZipArchive implements Countable, Iterator {
 		#if (!file_exists($file)) {
 		#	throw new \InvalidArgumentException("File '$file' not found"); # TODO: support create mode
 		#}
-		$this->file = $file;
+		$this->filename = $file;
 		if (!is_array($options)) {
-			$options = array();
+			$options = [];
 		}
 
 		# Get the options.
 		if ($options) {
 			foreach ($options as $key => $value) {
-				if (in_array($key, array('debug', 'unlink'))) {
+				if (in_array($key, ['debug', 'unlink'])) {
 					if (!(is_null($value) || is_bool($value) || is_int($value))) {
 						throw new \InvalidArgumentException("The '$key' option must be a boolean");
 					}
 					$this->$key = $value;
 				}
-				elseif (in_array($key, array('binary', 'internal_encoding'))) {
+				elseif (in_array($key, ['binary', 'internal_encoding'])) {
 					if (!(is_string($value) && strlen($value))) {
 						throw new \InvalidArgumentException("The '$key' option must be a non-empty string");
 					}
@@ -122,7 +123,7 @@ class SevenZipArchive implements Countable, Iterator {
 					$bin = null;
 					if (1) {
 						$cmd = 'command -v ' . escapeshellarg($candidate);
-						$output = array();
+						$output = [];
 						$rc = null;
 						exec($cmd, $output, $rc);
 						$this->debug && error_log(__METHOD__ . " $cmd: rc=$rc");
@@ -137,7 +138,7 @@ class SevenZipArchive implements Countable, Iterator {
 				}
 			}
 		}
-		$this->debug && error_log(__METHOD__ . ' Archive file: ' . $this->file);
+		$this->debug && error_log(__METHOD__ . ' Archive file: ' . $this->filename);
 		$this->debug && error_log(__METHOD__ . ' Binary: ' . $this->binary);
 		$this->debug && error_log(__METHOD__ . ' Internal encoding: ' . $this->internal_encoding);
 
@@ -151,14 +152,14 @@ class SevenZipArchive implements Countable, Iterator {
 	* Destructor.
 	*/
 	public function __destruct() {
-		#$this->unlink && file_exists($this->file) && unlink($this->file);
-		$this->debug && error_log(__METHOD__ . ' entered; must unlink ' . $this->file . ': ' . intval($this->unlink));
+		#$this->unlink && file_exists($this->filename) && unlink($this->filename);
+		$this->debug && error_log(__METHOD__ . ' entered; must unlink ' . $this->filename . ': ' . intval($this->unlink));
 		if ($this->unlink) {
-			if (file_exists($this->file)) {
-				unlink($this->file) && $this->debug && error_log(__METHOD__ . ' deleted ' . $this->file);
+			if (file_exists($this->filename)) {
+				unlink($this->filename) && $this->debug && error_log(__METHOD__ . ' deleted ' . $this->filename);
 			}
 			else {
-				$this->debug && error_log(__METHOD__ . ' file ' . $this->file . ' is missing');
+				$this->debug && error_log(__METHOD__ . ' file ' . $this->filename . ' is missing');
 			}
 		}
 	}
@@ -169,9 +170,9 @@ class SevenZipArchive implements Countable, Iterator {
 	*
 	* @return array
 	*/
-	protected function _list() {
-		if (!file_exists($this->file)) {
-			return array();
+	protected function _list(): array {
+		if (!file_exists($this->filename)) {
+			return [];
 		}
 		$cmd = $this->binary . ' l';
 		/* TODO: this doesn't seem to work:
@@ -185,10 +186,10 @@ class SevenZipArchive implements Countable, Iterator {
 			$cmd .= ' -scsDOS';
 		}
 		*/
-		$cmd .= ' ' . escapeshellarg($this->file);
+		$cmd .= ' ' . escapeshellarg($this->filename);
 		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
 		$rc = null;
-		$output = array();
+		$output = [];
 		exec($cmd, $output, $rc);
 		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
 		if ($rc) {
@@ -218,12 +219,12 @@ class SevenZipArchive implements Countable, Iterator {
 		------------------- ----- ------------ ------------  ------------------------
 		                               3301358       152684  1 files, 0 folders
 		*/
-		$errors = array();
+		$errors = [];
 		$meta_started = false;
-		$meta = array();
+		$meta = [];
 		$entries_started = false;
-		$entries_field_widths = array();
-		$entries = array();
+		$entries_field_widths = [];
+		$entries = [];
 		foreach ($output as $line) {
 			#$line = trim($line);
 
@@ -251,11 +252,11 @@ class SevenZipArchive implements Countable, Iterator {
 					(-+)	# Name
 				$/x', $line, $matches)) {
 					$entries_started = true;
-					$entries_field_widths['DateTime']		= strlen($matches[1]);
-					$entries_field_widths['Attr']			= strlen($matches[2]);
-					$entries_field_widths['Size']			= strlen($matches[3]);
-					$entries_field_widths['Compressed']	= strlen($matches[4]);
-					$entries_field_widths['Name']			= null;
+					$entries_field_widths['DateTime']   = strlen($matches[1]);
+					$entries_field_widths['Attr']       = strlen($matches[2]);
+					$entries_field_widths['Size']       = strlen($matches[3]);
+					$entries_field_widths['Compressed'] = strlen($matches[4]);
+					$entries_field_widths['Name']       = null;
 				}
 				continue;
 			}
@@ -265,7 +266,7 @@ class SevenZipArchive implements Countable, Iterator {
 				break;
 			}
 			$x = 0;
-			$entry = array();
+			$entry = [];
 			foreach ($entries_field_widths as $k => $w) {
 				$entry[$k] = trim($w ? substr($line, $x, $w) : substr($line, $x));
 				$x += $w;
@@ -290,7 +291,7 @@ class SevenZipArchive implements Countable, Iterator {
 	* @param string|resource &$stderr	- optional scalar reference or writeable stream resource
 	* @return int exit code
 	*/
-	protected function _proc_exec(array $command, $stdin = null, &$stdout = null, &$stderr = null, $debug = false) {	# copied from my proc_exec() v1.7 function
+	protected function _proc_exec(array $command, $stdin = null, &$stdout = null, &$stderr = null, $debug = false): int {	# copied from my proc_exec() v1.7 function
 		if (!$command) {
 			throw new InvalidArgumentException('No command given to execute');
 		}
@@ -348,14 +349,13 @@ class SevenZipArchive implements Countable, Iterator {
 		if ($command) {
 			$cmd .= ' ' . join(' ', array_map(function($x) { return escapeshellarg($x); }, $command));
 		}
-		$descriptors = array(
-			#array('pipe', 'r'),	# stdin is a pipe that the child will read from
-			$stdin_meta  && ($stdin_meta['stream_type']  == 'STDIO') ? $stdin  : array('pipe', 'r'),
-			$stdout_meta && ($stdout_meta['stream_type'] == 'STDIO') ? $stdout : array('pipe', 'w'),
-			$stderr_meta && ($stderr_meta['stream_type'] == 'STDIO') ? $stderr : array('pipe', 'w'),
-		);
+		$descriptors = [
+			$stdin_meta  && ($stdin_meta['stream_type']  == 'STDIO') ? $stdin  : ['pipe', 'r'],
+			$stdout_meta && ($stdout_meta['stream_type'] == 'STDIO') ? $stdout : ['pipe', 'w'],
+			$stderr_meta && ($stderr_meta['stream_type'] == 'STDIO') ? $stderr : ['pipe', 'w'],
+		];
 		if ($unreliable_proc_close) {
-			$descriptors []= array('pipe', 'w');
+			$descriptors []= ['pipe', 'w'];
 			$cmd = "($cmd) 3>/dev/null; echo \$? >&3";
 		}
 		$pipes = null;
@@ -449,7 +449,7 @@ class SevenZipArchive implements Countable, Iterator {
 	* @param string $realdir
 	* @return bool
 	*/
-	public function addDir($realdir) {
+	public function addDir(string $realdir): bool {
 		if (!is_string($realdir)) {
 			throw new \InvalidArgumentException(gettype($realdir) . ' is not a legal realdir argument type');
 		}
@@ -472,11 +472,11 @@ class SevenZipArchive implements Countable, Iterator {
 		# -bb0 set output log level switch supported in 16.02, but not in 9.20.
 		# -snl store symbolic links as links switch supported in 16.02, but not in 9.20.
 		$rc = null;
-		$output = array();
-		$cmd = escapeshellcmd($this->binary) . ' a -sae -bd -y ' . escapeshellarg($this->file) . ' ' . escapeshellarg($realdir);
+		$output = [];
+		$cmd = escapeshellcmd($this->binary) . ' a -sae -bd -y ' . escapeshellarg($this->filename) . ' ' . escapeshellarg($realdir);
 		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
 		$rc = null;
-		$output = array();
+		$output = [];
 		exec("$cmd 2>&1", $output, $rc);
 		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
 		$this->debug && error_log(__METHOD__ . ' Output: ' . join("\n", $output) . "\n");
@@ -497,7 +497,7 @@ class SevenZipArchive implements Countable, Iterator {
 	* @param string $contents
 	* @return bool
 	*/
-	public function addFromString($localname, $contents) {
+	public function addFromString(string $localname, string $contents): bool {
 		if (!is_string($localname)) {
 			throw new \InvalidArgumentException(gettype($localname) . ' is not a legal localname argument type');
 		}
@@ -518,7 +518,7 @@ class SevenZipArchive implements Countable, Iterator {
 			'-bd',	# disable progress indicator
 			'-y',	# assume Yes on all queries
 			'-si' . $localname,	# read data from stdin for $localname
-			$this->file,
+			$this->filename,
 		];
 		$this->debug && error_log(__METHOD__ . ' Unescaped command: ' . join(' ', $cmd));
 		$stdout = '';
@@ -542,7 +542,7 @@ class SevenZipArchive implements Countable, Iterator {
 	*
 	* @return bool
 	*/
-	public function close() {
+	public function close(): bool {
 		return true;
 	}
 
@@ -554,7 +554,7 @@ class SevenZipArchive implements Countable, Iterator {
 	* @param string|array $names
 	* @return bool
 	*/
-	public function extractTo($destination, $names = null) {
+	public function extractTo(string $destination, string|array $names = null): bool {
 		if (!is_string($destination)) {
 			throw new \InvalidArgumentException(gettype($destination) . ' is not a legal destination argument type');
 		}
@@ -569,11 +569,11 @@ class SevenZipArchive implements Countable, Iterator {
 		}
 		if (is_string($names)) {
 			if (strlen($names)) {
-				$names = array($names);
+				$names = [$names];
 			}
 		}
 		if ($names) {
-			$name_to_index = array();
+			$name_to_index = [];
 			$entries = $this->entries();
 			for ($i = 0; $i < count($entries); $i++) {
 				$name_to_index[$entries[$i]['Name']] = $i;
@@ -588,14 +588,14 @@ class SevenZipArchive implements Countable, Iterator {
 
 		# TODO: make path and executable configurable
 		$rc = null;
-		$output = array();
-		$cmd = $this->binary . ' x -bd -y -o' . escapeshellarg($destination) . ' ' . escapeshellarg($this->file);
+		$output = [];
+		$cmd = $this->binary . ' x -bd -y -o' . escapeshellarg($destination) . ' ' . escapeshellarg($this->filename);
 		if ($names) {
 			$cmd .= ' ' . join(' ', array_map(function($x) { return escapeshellarg($x); }, $names));
 		}
 		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
 		$rc = null;
-		$output = array();
+		$output = [];
 		exec("$cmd 2>&1", $output, $rc);
 		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
 		$this->debug && error_log(__METHOD__ . ' Output: ' . join("\n", $output) . "\n");
@@ -610,22 +610,24 @@ class SevenZipArchive implements Countable, Iterator {
 
 	/**
 	* Returns the archive file name as passed to the constructor.
+	* @deprecated use public readonly string $filename instead
 	*
 	* @return string
 	*/
-	public function getArchiveFileName() {	# from PHP 8.1 a public readonly string $filename property can be added similar to ZipArchive
-		return $this->file;
+	public function getArchiveFileName(): string {
+		trigger_error('Method ' . __METHOD__ . ' is deprecated in favour of publc readonly property $filename' , E_USER_DEPRECATED);
+		return $this->filename;
 	}
 
 
 	/**
 	* Returns an associative array of archive meta data.
 	*
-	* @return array|null
+	* @return array
 	*/
-	public function metadata() {
+	public function metadata(): array {
 		if (is_null($this->meta)) {
-			if (file_exists($this->file)) {
+			if (file_exists($this->filename)) {
 				$this->_list();	# Sets $this->meta
 			}
 		}
@@ -638,13 +640,13 @@ class SevenZipArchive implements Countable, Iterator {
 	*
 	* @return array
 	*/
-	public function entries() {
+	public function entries(): array {
 		if (is_null($this->entries)) {
-			if (file_exists($this->file)) {
+			if (file_exists($this->filename)) {
 				$this->entries = $this->_list();
 			}
 		}
-		return is_null($this->entries) ? array() : $this->entries;
+		return is_null($this->entries) ? [] : $this->entries;
 	}
 
 
@@ -653,15 +655,15 @@ class SevenZipArchive implements Countable, Iterator {
 	*
 	* @return bool
 	*/
-	public function test() {
-		if (!file_exists($this->file)) {
+	public function test(): bool {
+		if (!file_exists($this->filename)) {
 			return false;
 		}
 		$cmd = $this->binary . ' t';
-		$cmd .= ' ' . escapeshellarg($this->file) . ' 2>&1';
+		$cmd .= ' ' . escapeshellarg($this->filename) . ' 2>&1';
 		$this->debug && error_log(__METHOD__ . ' Command: ' . $cmd);
 		$rc = null;
-		$output = array();
+		$output = [];
 		exec($cmd, $output, $rc);
 		$this->debug && error_log(__METHOD__ . ' rc: ' . $rc);
 		$result = false;
@@ -690,7 +692,7 @@ class SevenZipArchive implements Countable, Iterator {
 	*
 	* @return int
 	*/
-	public function count() {
+	public function count(): int {
 		return count($this->entries());
 	}
 
@@ -699,9 +701,9 @@ class SevenZipArchive implements Countable, Iterator {
 	* Returns the entry at the given index.
 	*
 	* @param int $index
-	* @return int
+	* @return array
 	*/
-	public function get($index) {
+	public function get(int $index): array {
 		return isset($this->entries[$index]) ? $this->entries[$index] : null;
 	}
 
@@ -712,7 +714,7 @@ class SevenZipArchive implements Countable, Iterator {
 	* @param bool $value
 	* @return void
 	*/
-	public function setDebug($value) {
+	public function setDebug(bool $value): bool {
 		$this->debug = !!$value;
 	}
 
@@ -720,7 +722,7 @@ class SevenZipArchive implements Countable, Iterator {
 	/**
 	* Required Iterator interface method.
 	*/
-	public function current() {
+	public function current(): array {
 		return is_array($this->entries) ? $this->entries[$this->key] : null;
 	}
 
@@ -728,7 +730,7 @@ class SevenZipArchive implements Countable, Iterator {
 	/**
 	* Required Iterator interface method.
 	*/
-	public function key() {
+	public function key(): int {
 		return $this->key;
 	}
 
@@ -736,7 +738,7 @@ class SevenZipArchive implements Countable, Iterator {
 	/**
 	* Required Iterator interface method.
 	*/
-	public function next() {
+	public function next(): void {
 		if (is_array($this->entries)) {
 			$this->key++;
 		}
@@ -746,9 +748,9 @@ class SevenZipArchive implements Countable, Iterator {
 	/**
 	* Required Iterator interface method.
 	*/
-	public function rewind() {
+	public function rewind(): void {
 		if (is_null($this->entries)) {
-			if (file_exists($this->file)) {
+			if (file_exists($this->filename)) {
 				$this->entries = $this->_list();
 			}
 		}
@@ -759,7 +761,7 @@ class SevenZipArchive implements Countable, Iterator {
 	/**
 	* Required Iterator interface method.
 	*/
-	public function valid() {
+	public function valid(): bool {
 		return is_array($this->entries) && ($this->key >= 0) && ($this->key < count($this->entries));
 	}
 

@@ -10,6 +10,9 @@ foreach ($tests as $file => $expect) {
 	$archive = new SevenZipArchive($file, array(
 		#'debug' => true,
 	));
+	#print 'Archive file name: ' . $archive->getArchiveFileName() . "\n";
+	print 'Archive file name: ' . $archive->filename . "\n";
+
 	$actual = $archive->test($file);
 	print "test('$file') returns " . var_export($actual, true) . ' ';
 	if ($actual == $expect) {
