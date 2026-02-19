@@ -73,7 +73,7 @@ class SevenZipArchive implements Countable, Iterator {
 	* @throws SevenZipArchiveException
 	* @throws \InvalidArgumentException
 	*/
-	function __construct(string $file, array $options = null) {
+	function __construct(string $file, ?array $options = null) {
 		if (!is_string($file)) {
 			throw new \InvalidArgumentException(gettype($file) . ' is not a legal file argument type');
 		}
@@ -554,7 +554,7 @@ class SevenZipArchive implements Countable, Iterator {
 	* @param string|array $names
 	* @return bool
 	*/
-	public function extractTo(string $destination, string|array $names = null): bool {
+	public function extractTo(string $destination, string|array|null $names = null): bool {
 		if (!is_string($destination)) {
 			throw new \InvalidArgumentException(gettype($destination) . ' is not a legal destination argument type');
 		}
